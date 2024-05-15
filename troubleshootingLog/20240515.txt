@@ -1,0 +1,46 @@
+5/15/2024
+
+# Ran the command:
+ansible myhosts -m ping -i inventory.ini
+
+# Produced the following error:
+#--- Error
+10.0.0.100 | UNREACHABLE! => {
+    "changed": false,
+    "msg": "Failed to connect to the host via ssh: Unable to negotiate with 10.0.0.100 port 22: no matching key exchange method found. Their offer: diffie-hellman-group-exchange-sha1,diffie-hellman-group14-sha1,diffie-hellman-group1-sha1",
+    "unreachable": true
+}
+
+# Cleared the error by adding the following to the SSH config file located at /etc/ssh/ssh_config
+KexAlgorithms +diffie-hellman-group-exchange-sha1,diffie-hellman-group14-sha1,diffie-hellman-group1-sha1
+
+# Ran ansible ping module once again but received another error
+#--- Error
+10.0.0.100 | UNREACHABLE! => {
+    "changed": false,
+    "msg": "Failed to connect to the host via ssh: Warning: Permanently added '10.0.0.100' (RSA) to the list of known hosts.\r\n\r\nIOSv - Cisco Systems Confidential -\r\n\r\nSupplemental End User License Restrictions\r\n\r\nThis IOSv software is provided AS-IS without warranty of any kind. Under no circumstances may this software be used separate from the Cisco Modeling Labs Software that this software was provided with, or deployed or used as part of a production environment.\r\n\r\nBy using the software, you agree to abide by the terms and conditions of the Cisco End User License Agreement at http://www.cisco.com/go/eula. Unauthorized use or distribution of this software is expressly prohibited.\r\nroot@10.0.0.100: Permission denied (publickey,keyboard-interactive,password).",
+    "unreachable": true
+}
+# Confirmed that the device is reachable via manually SSH
+# Altered ansible command as follows. Was presented with a different error
+sudo ansible myhosts -m ping -i inventory.ini -u kadeem --ask-pass
+
+#--- Error
+SSH password: 
+[WARNING]: Unhandled error in Python interpreter discovery for host 10.0.0.100: unexpected output from Python interpreter discovery
+[WARNING]: sftp transfer mechanism failed on [10.0.0.100]. Use ANSIBLE_DEBUG=1 to see detailed information
+[WARNING]: scp transfer mechanism failed on [10.0.0.100]. Use ANSIBLE_DEBUG=1 to see detailed information
+[WARNING]: Platform unknown on host 10.0.0.100 is using the discovered Python interpreter at /usr/bin/python, but future installation of another Python interpreter could change the meaning of
+that path. See https://docs.ansible.com/ansible-core/2.15/reference_appendices/interpreter_discovery.html for more information.
+10.0.0.100 | FAILED! => {
+    "ansible_facts": {
+        "discovered_interpreter_python": "/usr/bin/python"
+    },
+    "changed": false,
+    "module_stderr": "\r\nIOSv - Cisco Systems Confidential -\r\n\r\nSupplemental End User License Restrictions\r\n\r\nThis IOSv software is provided AS-IS without warranty of any kind. Under no circumstances may this software be used separate from the Cisco Modeling Labs Software that this software was provided with, or deployed or used as part of a production environment.\r\n\r\nBy using the software, you agree to abide by the terms and conditions of the Cisco End User License Agreement at http://www.cisco.com/go/eula. Unauthorized use or distribution of this software is expressly prohibited.\r\nShared connection to 10.0.0.100 closed.\r\n",
+    "module_stdout": "\r\nLine has invalid autocommand \"/bin/sh -c '/usr/bin/python '\"'\"'\"` echo $HOME/.ansible/tmp/ansible-tmp\"/AnsiballZ_ping.py'\"'\"' && sleep 0'\"",
+    "msg": "MODULE FAILURE\nSee stdout/stderr for the exact error",
+    "rc": 0
+}
+
+# Issue could possibly be that the switch does not have an active version Python running. Will circle back, tired as hell.
