@@ -1,0 +1,189 @@
+06/05/2024
+
+Had to recreate my Ansible lab after breaking the sudo command on my RaspberryPi.
+Starting from scratch with 3 Routers in CML.
+
+Goal for today:
+Make routers pingable from LAN.
+Create inventory file for host devices.
+Confirm new Debian VM can SSH into each router.
+Test reachability to devices using Ansible. Record result.
+
+#--- Router info:
+
+R1: 10.0.0.101
+R2: 10.0.0.102
+R3: 10.0.0.103
+
+#--- Reachability results:
+
+Pinging 10.0.0.101 with 32 bytes of data:                                                                               
+Reply from 10.0.0.101: bytes=32 time=267ms TTL=255
+Reply from 10.0.0.101: bytes=32 time=2ms TTL=255
+Reply from 10.0.0.101: bytes=32 time=2ms TTL=255
+Reply from 10.0.0.101: bytes=32 time=2ms TTL=255
+
+Pinging 10.0.0.102 with 32 bytes of data:
+Reply from 10.0.0.102: bytes=32 time=391ms TTL=255
+Reply from 10.0.0.102: bytes=32 time=2ms TTL=255
+Reply from 10.0.0.102: bytes=32 time=3ms TTL=255
+Reply from 10.0.0.102: bytes=32 time=2ms TTL=255
+
+Pinging 10.0.0.103 with 32 bytes of data:
+Reply from 10.0.0.103: bytes=32 time=6ms TTL=255
+Reply from 10.0.0.103: bytes=32 time=2ms TTL=255
+Reply from 10.0.0.103: bytes=32 time=3ms TTL=255
+Reply from 10.0.0.103: bytes=32 time=2ms TTL=255
+
+#--- Inventory File
+
+[MyRouters]
+10.0.0.101
+10.0.0.102
+10.0.0.103
+
+This is the documentation being used as a reference btw:
+https://docs.ansible.com/ansible/latest/getting_started/index.html
+
+Confirmed inventory file:
+
+ansible-inventory -i hosts.ini --list
+
+Output:
+{
+    "MyRouters": {
+        "hosts": [
+            "10.0.0.101",
+            "10.0.0.102",
+            "10.0.0.103"
+        ]
+    },
+    "_meta": {
+        "hostvars": {}
+    },
+    "all": {
+        "children": [
+            "ungrouped",
+            "MyRouters"
+        ]
+    }
+}
+
+#--- Testing
+
+Ran an Ad-hoc command to test reachability.
+
+ansible MyRouters -m ping -i hosts.ini
+
+Fill in the blanks with your own information:
+ansible <hostGroup> -m <module> -i <inventoryFile>
+
+In this scenario, the module being used is "ping". 
+--> Documentation for all Ansible modules:
+https://docs.ansible.com/ansible/2.9/modules/list_of_all_modules.html
+
+Output of the above command:
+
+10.0.0.101 | UNREACHABLE! => {
+    "changed": false,
+    "msg": "Failed to connect to the host via ssh: ssh: connect to host 10.0.0.101 port 22: Connection refused",
+    "unreachable": true
+}
+10.0.0.102 | UNREACHABLE! => {
+    "changed": false,
+    "msg": "Failed to connect to the host via ssh: ssh: connect to host 10.0.0.102 port 22: Connection refused",
+    "unreachable": true
+}
+10.0.0.103 | UNREACHABLE! => {
+    "changed": false,
+    "msg": "Failed to connect to the host via ssh: ssh: connect to host 10.0.0.103 port 22: Connection refused",
+    "unreachable": true
+}
+
+Need to enable SSH on routers
+
+#--- Procedure:
+NOTE: Create a document on this
+
+R1:
+ip domain-name LAB
+crypto key generate rsa modulus 2048
+ip ssh ver 2
+username kadeem password cisco
+!
+line vty 0 4
+ transport input ssh
+
+Result of next test:
+Unable to negotiate with 10.0.0.101 port 22: no matching key exchange method found. Their offer: diffie-hellman-group-exchange-sha1,diffie-hellman-group14-sha1
+
+Information says to add the key exchange methods mentioned above to a .ssh file.
+Was not visible using ls -a
+Ran a search:
+ find / -type f -name .ssh*
+No result
+
+Search results say the file/folder is created automatically after generating SSH keys. See source below.
+https://www.digitalocean.com/community/tutorials/how-to-set-up-ssh-keys-on-debian-11
+
+Found ssh config file at /etc/ssh/ssh_config
+ssh_config man page
+
+KexAlgorithms
+             Specifies the available KEX (Key Exchange) algorithms.  Multiple algorithms must be comma-separated.  If the specified list begins with a ‘+’ character, then the specified algo‐
+             rithms will be appended to the default set instead of replacing them.  If the specified list begins with a ‘-’ character, then the specified algorithms (including wildcards)
+             will be removed from the default set instead of replacing them.  If the specified list begins with a ‘^’ character, then the specified algorithms will be placed at the head of
+             the default set.  The default is:
+
+                   sntrup761x25519-sha512@openssh.com,
+                   curve25519-sha256,curve25519-sha256@libssh.org,
+                   ecdh-sha2-nistp256,ecdh-sha2-nistp384,ecdh-sha2-nistp521,
+                   diffie-hellman-group-exchange-sha256,
+                   diffie-hellman-group16-sha512,
+                   diffie-hellman-group18-sha512,
+                   diffie-hellman-group14-sha256
+
+             The list of available key exchange algorithms may also be obtained using "ssh -Q kex".
+root@DEBIAN-DT:~# ssh -Q kex
+diffie-hellman-group1-sha1
+diffie-hellman-group14-sha1
+diffie-hellman-group14-sha256
+diffie-hellman-group16-sha512
+diffie-hellman-group18-sha512
+diffie-hellman-group-exchange-sha1
+diffie-hellman-group-exchange-sha256
+ecdh-sha2-nistp256
+ecdh-sha2-nistp384
+ecdh-sha2-nistp521
+curve25519-sha256
+curve25519-sha256@libssh.org
+sntrup761x25519-sha512@openssh.com
+
+Created config file at /~/.ssh/config:
+Host 10.0.0.101
+   KexAlgorithms +diffie-hellman-group-exchange-sha1,diffie-hellman-group14-sha1
+
+New error:
+Unable to negotiate with 10.0.0.101 port 22: no matching host key type found. Their offer: ssh-rsa
+
+To that same config file I added:
+HostKeyAlgorithms +ssh-rsa
+
+Final result after testing:
+The authenticity of host '10.0.0.101 (10.0.0.101)' can't be established.
+RSA key fingerprint is SHA256:Uzukt37YD/oX6YdiLPz4oQ7sh/LNfknopWbc6bAialA.
+This key is not known by any other names.
+Are you sure you want to continue connecting (yes/no/[fingerprint])? yes
+
+Was prompted to enter a password. The credentials I created initially did not work. Had to add "login local" to the vty lines.
+
+New error when running Ansible ping module:
+10.0.0.101 | UNREACHABLE! => {
+    "changed": false,
+    "msg": "Failed to connect to the host via ssh: \r\n**************************************************************************\r\n* IOSv is strictly limited to use for evaluation, demonstration and IOS  *\r\n* education. IOSv is provided as-is and is not supported by Cisco's      *\r\n* Technical Advisory Center. Any use or disclosure, in whole or in part, *\r\n* of the IOSv Software or Documentation to any third party for any       *\r\n* purposes is expressly prohibited except as otherwise authorized by     *\r\n* Cisco in writing.                                                      *\r\n**************************************************************************kadeem@10.0.0.101: Permission denied (publickey,keyboard-interactive,password).",
+    "unreachable": true
+}
+
+References:
+https://www.digitalocean.com/community/tutorials/how-to-set-up-ssh-keys-on-debian-11
+https://unix.stackexchange.com/questions/700479/diffie-hellman-group1-sha1-key-exchange-on-ubuntu-issues
