@@ -1,0 +1,132 @@
+Yesterday I was able to gain SSH access to the routers in my CML lab via SSH but the Ansible ping module did not work.
+Goal for today is to figure out why.
+
+This is the error:
+
+10.0.0.101 | UNREACHABLE! => {
+    "changed": false,
+    "msg": "Failed to connect to the host via ssh: \r\n**************************************************************************\r\n* IOSv is strictly limited to use for evaluation, demonstration and IOS  *\r\n* education. IOSv is provided as-is and is not supported by Cisco's      *\r\n* Technical Advisory Center. Any use or disclosure, in whole or in part, *\r\n* of the IOSv Software or Documentation to any third party for any       *\r\n* purposes is expressly prohibited except as otherwise authorized by     *\r\n* Cisco in writing.                                                      *\r\n**************************************************************************kadeem@10.0.0.101: Permission denied (publickey,keyboard-interactive,password).",
+    "unreachable": true
+}
+10.0.0.103 | UNREACHABLE! => {
+    "changed": false,
+    "msg": "Failed to connect to the host via ssh: \r\n**************************************************************************\r\n* IOSv is strictly limited to use for evaluation, demonstration and IOS  *\r\n* education. IOSv is provided as-is and is not supported by Cisco's      *\r\n* Technical Advisory Center. Any use or disclosure, in whole or in part, *\r\n* of the IOSv Software or Documentation to any third party for any       *\r\n* purposes is expressly prohibited except as otherwise authorized by     *\r\n* Cisco in writing.                                                      *\r\n**************************************************************************kadeem@10.0.0.103: Permission denied (publickey,keyboard-interactive,password).",
+    "unreachable": true
+}
+10.0.0.102 | UNREACHABLE! => {
+    "changed": false,
+    "msg": "Failed to connect to the host via ssh: \r\n**************************************************************************\r\n* IOSv is strictly limited to use for evaluation, demonstration and IOS  *\r\n* education. IOSv is provided as-is and is not supported by Cisco's      *\r\n* Technical Advisory Center. Any use or disclosure, in whole or in part, *\r\n* of the IOSv Software or Documentation to any third party for any       *\r\n* purposes is expressly prohibited except as otherwise authorized by     *\r\n* Cisco in writing.                                                      *\r\n**************************************************************************kadeem@10.0.0.102: Permission denied (publickey,keyboard-interactive,password).",
+    "unreachable": true
+}
+
+RANDOM NOTES:
+Ansible config file parse order
+
+ANSIBLE_CONFIG (env var)
+ansible.cfg (in the current directory)
+~/.ansible.cfg (in the home directory)
+/etc/ansible/ansible.cfg
+
+Use -vvvv at the end of command for detailed output
+
+Recreating host file using YAML
+
+MyRouters:
+    vars:
+        ansible_user: kadeem
+    hosts:
+        10.0.0.101
+        10.0.0.102
+        10.0.0.103
+
+So I discovered that each entry in the parenthesis is an error:
+ Permission denied (publickey,keyboard-interactive,password)
+
+Solving publickey error:
+
+On router:
+ip ssh server algorithm authentication publickey
+    -Disabled all other authentication methods besides the use of publickey. Forcing myself to figure this out
+
+Configure publickeys from SSH client onto router:
+Get SSH public key from client
+    cat ~/.ssh/id_rsa.pub
+    fold -b -w 72 ~/.ssh/id_rsa.pub
+Add key to router
+    ip ssh pubkey-chain
+    username kadeem
+    key-string
+    {{key}}
+Confirm key on router using:
+    show run | sec pubkey
+Confirm on host using:
+    ssh-keygen -l -f id_rsa.pub
+*Keys not matching up
+
+Confirmed keys matched after running command on host machine:
+ssh-keygen -l -E md5 -f id_rsa.pub
+    Newer versions of OpenSSH display hashes in SHA-256 versus the router's MD5
+
+Recreated the key, set the type to rsa
+    ssh-keygen -b 2048 -t rsa
+
+This video here came clutch:
+https://www.youtube.com/watch?v=3lXc7xO8T9k
+
+
+
+
+#--- To summarize all of the steps:
+
+# Create SSH Keys on the client you're using to SSH into the devices
+    ssh-keygen
+# Confirm the SSH key fingerprint(MD5)
+# -E specifies the finger print hash. Check ssh-keygen manpages for more info
+    ssh-keygen -l -E md5 -f id_rsa.pub
+# Copy the key using:
+    fold -b -w 72 ~/.ssh/id_rsa.pub
+# Configure SSH on the router
+# Secure the router by disabling all other SSH authentication methods. Only enable Publickey
+    ip ssh server algorithm authentication publickey
+# Add the public key of the remote host
+    ip ssh pubkey-chain
+    username kadeem
+    key-string
+    <enter publickey>
+# Confirm SSH key fingerprint. Should match the output on the client device
+    sh run | sec pubkey
+# Test SSH
+
+
+#--- Test Ansible ping module
+# Command
+    ansible MyRouters -m ping -i hosts.yaml
+
+# Output
+ansible MyRouters -m ping -i /home/kadeem/debianVM/Ansible/env/hosts.yaml 
+[WARNING]: Unhandled error in Python interpreter discovery for host 10.0.0.101: unexpected
+output from Python interpreter discovery
+[WARNING]: sftp transfer mechanism failed on [10.0.0.101]. Use ANSIBLE_DEBUG=1 to see detailed
+information
+[WARNING]: scp transfer mechanism failed on [10.0.0.101]. Use ANSIBLE_DEBUG=1 to see detailed
+information
+[WARNING]: Platform unknown on host 10.0.0.101 is using the discovered Python interpreter at
+/usr/bin/python, but future installation of another Python interpreter could change the
+meaning of that path. See https://docs.ansible.com/ansible-
+core/2.14/reference_appendices/interpreter_discovery.html for more information.
+10.0.0.101 | FAILED! => {
+    "ansible_facts": {
+        "discovered_interpreter_python": "/usr/bin/python"
+    },
+    "changed": false,
+    "module_stderr": "\r\n**************************************************************************\r\n* IOSv is strictly limited to use for evaluation, demonstration and IOS  *\r\n* education. IOSv is provided as-is and is not supported by Cisco's      *\r\n* Technical Advisory Center. Any use or disclosure, in whole or in part, *\r\n* of the IOSv Software or Documentation to any third party for any       *\r\n* purposes is expressly prohibited except as otherwise authorized by     *\r\n* Cisco in writing.                                                      *\r\n**************************************************************************Shared connection to 10.0.0.101 closed.\r\n",
+    "module_stdout": "\r\n\r\n\r\nLine has invalid autocommand \"/bin/sh -c '/usr/bin/python '\"'\"'Line has invalid autocommand \"/bin/sh -c '\"'\"'\"'\"'\"'\"'\"'\"'( umask 77 && mkdir -p \"` echo Line has invalid autocommand \"/bin/sh -c '\"'\"'\"'\"'\"'\"'\"'\"'\"'\"'\"'\"'\"'\"'\"'\"'\"'\"'\"'\"'\"'\"'\"'\"'\"'\"'echo ~ && sleep 0'\"'\"'\"'\"'\"'\"'\"'\"'\"'\"'\"\"",
+    "msg": "MODULE FAILURE\nSee stdout/stderr for the exact error",
+    "rc": 0
+
+Still trash but at least its not the same error. Lol.
+
+References:
+https://nsrc.org/workshops/2016/renu-nsrc-cns/raw-attachment/wiki/Agenda/Using-SSH-public-key-authentication-with-Cisco.htm
+https://www.cisco.com/c/en/us/support/docs/security-vpn/secure-shell-ssh/4145-ssh.html
+https://www.cisco.com/c/en/us/td/docs/ios-xml/ios/sec_usr_ssh/configuration/xe-3s/sec-usr-ssh-xe-3s-book/sec-ssh-config-auth.html
